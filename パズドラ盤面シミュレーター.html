@@ -1,0 +1,373 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>パズドラ盤面シミュレーター</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: board left (6x5 grid), tools + combo readout right; stacks on phones */
+:root {
+  --bg: #f3f1f6;
+  --surface: #ffffff;
+  --fg: #1d1a2b;
+  --muted: #6c667f;
+  --line: #d9d5e4;
+  --accent: #5b3fd1;
+  --accent-fg: #ffffff;
+  --cell-a: #8a7a68;
+  --cell-b: #7a6b5a;
+  --board-edge: #4a3f34;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  /* orb colours are game semantics, same in both themes */
+  --o-fire: #e5493a; --o-water: #2f7fe0; --o-wood: #2fae54;
+  --o-light: #f2c21b; --o-dark: #8a3fc2; --o-heal: #ef6aa8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14121d; --surface: #1e1b2c; --fg: #ece9f6; --muted: #9a94b2; --line: #35304a;
+    --accent: #9d87ff; --accent-fg: #14121d; --cell-a: #4b4036; --cell-b: #3f352c; --board-edge: #0e0c14;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14121d; --surface: #1e1b2c; --fg: #ece9f6; --muted: #9a94b2; --line: #35304a;
+  --accent: #9d87ff; --accent-fg: #14121d; --cell-a: #4b4036; --cell-b: #3f352c; --board-edge: #0e0c14;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color: transparent;
+}
+.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(22px, 5vw, 30px); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+@media (max-width: 760px) { .app { grid-template-columns: minmax(0, 1fr); } }
+
+.board-wrap { display: grid; gap: 12px; }
+.board {
+  position: relative; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(5, 1fr);
+  aspect-ratio: 6 / 5; width: 100%; border: 5px solid var(--board-edge); border-radius: 10px; overflow: hidden;
+  touch-action: none; user-select: none; -webkit-user-select: none; background: var(--cell-a);
+}
+.cell { position: relative; display: grid; place-items: center; }
+.cell:nth-child(odd) { background: var(--cell-a); }
+.cell:nth-child(even) { background: var(--cell-b); }
+/* checker: 6 columns is even, so shift every other row */
+.cell.alt:nth-child(odd) { background: var(--cell-b); }
+.cell.alt:nth-child(even) { background: var(--cell-a); }
+.orb {
+  width: 86%; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-display); font-size: clamp(14px, 4.6vw, 30px); color: rgba(255,255,255,.95);
+  text-shadow: 0 1px 2px rgba(0,0,0,.45);
+  box-shadow: inset 0 -6px 10px rgba(0,0,0,.28), inset 0 5px 8px rgba(255,255,255,.38), 0 2px 3px rgba(0,0,0,.35);
+  pointer-events: none;
+}
+.orb.c0 { background: radial-gradient(circle at 35% 30%, #ff9a8a, var(--o-fire) 60%, #a8271b); }
+.orb.c1 { background: radial-gradient(circle at 35% 30%, #8fc0ff, var(--o-water) 60%, #174f9f); }
+.orb.c2 { background: radial-gradient(circle at 35% 30%, #9be8ae, var(--o-wood) 60%, #167a35); }
+.orb.c3 { background: radial-gradient(circle at 35% 30%, #fff0a0, var(--o-light) 60%, #b08a00); color: #5a4300; text-shadow: 0 1px 1px rgba(255,255,255,.4); }
+.orb.c4 { background: radial-gradient(circle at 35% 30%, #d4a2f5, var(--o-dark) 60%, #52207f); }
+.orb.c5 { background: radial-gradient(circle at 35% 30%, #ffc0de, var(--o-heal) 60%, #b73a77); }
+.cell.held .orb { opacity: .25; }
+.cell.hit::after { content: ""; position: absolute; inset: 4%; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 10px 2px rgba(255,255,255,.85); pointer-events: none; }
+.badge {
+  position: absolute; top: 3%; left: 3%; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px;
+  background: #111; color: #fff; font-size: 12px; font-weight: 700; display: grid; place-items: center; z-index: 2; pointer-events: none;
+}
+.ghost { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -62%) scale(1.12); filter: drop-shadow(0 6px 8px rgba(0,0,0,.45)); }
+.ghost .orb { width: 100%; }
+.cell.edit { cursor: crosshair; }
+
+.panel { display: grid; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
+.label { font-size: 11px; letter-spacing: .12em; color: var(--muted); font-weight: 700; margin: 0; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 3px; }
+.seg button { border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 700; font-size: 14px; padding: 9px 6px; border-radius: 8px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.palette { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.sw { border: 2px solid transparent; background: transparent; border-radius: 12px; padding: 3px; cursor: pointer; }
+.sw[aria-pressed="true"] { border-color: var(--accent); }
+.sw .orb { width: 100%; font-size: 16px; }
+.sw.empty .orb { background: var(--bg); border: 2px dashed var(--muted); color: var(--muted); box-shadow: none; text-shadow: none; font-family: var(--font-body); font-size: 11px; font-weight: 700; }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button.b { font: inherit; font-size: 13px; font-weight: 700; padding: 10px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+button.b.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.b:disabled { opacity: .4; cursor: default; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.combo-n { font-family: var(--font-display); font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+.combo-n small { font-family: var(--font-body); font-size: 14px; color: var(--muted); font-weight: 700; margin-left: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border: 1px solid var(--line); border-radius: 20px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.chip .orb { width: 20px; font-size: 11px; box-shadow: inset 0 -2px 3px rgba(0,0,0,.25); }
+.stats { display: flex; gap: 16px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.stats b { color: var(--fg); }
+.hint { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 0; }
+.toast { font-size: 12px; color: var(--accent); min-height: 16px; font-weight: 700; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>パズドラ盤面シミュレーター</h1>
+    <p class="sub">6×5の盤面で、ドロップの配置とコンボ数を試せます。画像は使わず、すべて自作の描画です。</p>
+  </header>
+
+  <div class="app">
+    <div class="board-wrap">
+      <div class="board" id="board" aria-label="盤面"></div>
+      <div class="stats">
+        <span>移動 <b id="moves">0</b> 手</span>
+        <span>累計コンボ <b id="total">0</b></span>
+        <span class="toast" id="toast" role="status"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="card">
+        <p class="label">モード</p>
+        <div class="seg" role="group" aria-label="モード">
+          <button id="m-play" aria-pressed="true">操作する</button>
+          <button id="m-edit" aria-pressed="false">配置する</button>
+        </div>
+        <div id="palette-box" hidden>
+          <p class="label" style="margin-bottom:8px">ブラシ（なぞって塗れます）</p>
+          <div class="palette" id="palette"></div>
+        </div>
+        <p class="hint" id="hint">ドロップを長押しして動かすと、通った場所のドロップが入れ替わります。</p>
+      </div>
+
+      <div class="card">
+        <p class="label">コンボ</p>
+        <div class="combo-n"><span id="combo">0</span><small>コンボ</small></div>
+        <div class="chips" id="chips"></div>
+        <div class="btns">
+          <button class="b primary" id="b-clear">消して落とす</button>
+          <button class="b" id="b-undo">1手戻す</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="label">盤面</p>
+        <div class="btns">
+          <button class="b" id="b-random">ランダム</button>
+          <button class="b" id="b-reset">初期盤面へ戻す</button>
+          <button class="b" id="b-save">今の盤面を初期にする</button>
+          <button class="b" id="b-empty">全部空にする</button>
+        </div>
+        <p class="hint">「消して落とす」は、つながったドロップを消して上から落とします（新しいドロップは降りません）。連鎖して消える分も累計に加算されます。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLS = 6, ROWS = 5, N = COLS * ROWS;
+const NAMES = ["火", "水", "木", "光", "闇", "♥"];
+const boardEl = document.getElementById("board");
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  board: [], start: [], undo: [], mode: "play", brush: 0,
+  held: -1, moves: 0, total: 0, hits: null, ghost: null
+};
+
+function randomBoard() { return Array.from({ length: N }, () => Math.floor(Math.random() * 6)); }
+function lsGet() { try { return JSON.parse(localStorage.getItem("pad-start")); } catch (e) { return null; } }
+function lsSet(v) { try { localStorage.setItem("pad-start", JSON.stringify(v)); } catch (e) {} }
+
+/* ---- evaluation ---- */
+function evaluate(b) {
+  const mark = new Array(N).fill(false);
+  for (let r = 0; r < ROWS; r++) {
+    let c = 0;
+    while (c < COLS) {
+      const col = b[r * COLS + c]; let e = c;
+      while (e + 1 < COLS && col >= 0 && b[r * COLS + e + 1] === col) e++;
+      if (col >= 0 && e - c + 1 >= 3) for (let k = c; k <= e; k++) mark[r * COLS + k] = true;
+      c = e + 1;
+    }
+  }
+  for (let c = 0; c < COLS; c++) {
+    let r = 0;
+    while (r < ROWS) {
+      const col = b[r * COLS + c]; let e = r;
+      while (e + 1 < ROWS && col >= 0 && b[(e + 1) * COLS + c] === col) e++;
+      if (col >= 0 && e - r + 1 >= 3) for (let k = r; k <= e; k++) mark[k * COLS + c] = true;
+      r = e + 1;
+    }
+  }
+  const seen = new Array(N).fill(false), combos = [];
+  for (let i = 0; i < N; i++) {
+    if (!mark[i] || seen[i]) continue;
+    const color = b[i], cells = [], stack = [i]; seen[i] = true;
+    while (stack.length) {
+      const p = stack.pop(); cells.push(p);
+      const r = Math.floor(p / COLS), c = p % COLS;
+      [[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(([rr, cc]) => {
+        if (rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS) return;
+        const q = rr * COLS + cc;
+        if (mark[q] && !seen[q] && b[q] === color) { seen[q] = true; stack.push(q); }
+      });
+    }
+    cells.sort((a, b2) => a - b2);
+    combos.push({ color, cells });
+  }
+  return combos;
+}
+function gravity(b) {
+  const out = b.slice();
+  for (let c = 0; c < COLS; c++) {
+    const col = [];
+    for (let r = ROWS - 1; r >= 0; r--) if (out[r * COLS + c] >= 0) col.push(out[r * COLS + c]);
+    for (let r = ROWS - 1, k = 0; r >= 0; r--, k++) out[r * COLS + c] = k < col.length ? col[k] : -1;
+  }
+  return out;
+}
+
+/* ---- rendering ---- */
+function orbHTML(c) { return c < 0 ? "" : `<div class="orb c${c}">${NAMES[c]}</div>`; }
+function render() {
+  const combos = evaluate(state.board);
+  state.hits = combos;
+  const hitSet = new Map();
+  combos.forEach((cb, i) => cb.cells.forEach((p, j) => hitSet.set(p, j === 0 ? i + 1 : 0)));
+  boardEl.innerHTML = state.board.map((c, i) => {
+    const r = Math.floor(i / COLS);
+    const cls = ["cell", r % 2 ? "alt" : "", hitSet.has(i) ? "hit" : "", i === state.held ? "held" : "", state.mode === "edit" ? "edit" : ""].join(" ");
+    const badge = hitSet.get(i) ? `<span class="badge">${hitSet.get(i)}</span>` : "";
+    return `<div class="${cls}" data-i="${i}">${orbHTML(c)}${badge}</div>`;
+  }).join("");
+  $("combo").textContent = combos.length;
+  const byColor = {};
+  combos.forEach((cb) => { byColor[cb.color] = (byColor[cb.color] || 0) + 1; });
+  $("chips").innerHTML = Object.keys(byColor).map((c) => `<span class="chip"><span class="orb c${c}">${NAMES[c]}</span>${byColor[c]}</span>`).join("") || '<span class="hint">つながっているドロップはありません</span>';
+  $("moves").textContent = state.moves;
+  $("total").textContent = state.total;
+  $("b-clear").disabled = combos.length === 0;
+  $("b-undo").disabled = state.undo.length === 0;
+}
+let toastTimer;
+function toast(t) { $("toast").textContent = t; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $("toast").textContent = ""; }, 2200); }
+
+/* ---- pointer handling ---- */
+function cellAt(x, y) {
+  const rc = boardEl.getBoundingClientRect();
+  const bw = parseFloat(getComputedStyle(boardEl).borderLeftWidth) || 0;
+  const w = (rc.width - bw * 2) / COLS, h = (rc.height - bw * 2) / ROWS;
+  const c = Math.floor((x - rc.left - bw) / w), r = Math.floor((y - rc.top - bw) / h);
+  if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return -1;
+  return r * COLS + c;
+}
+function makeGhost(color, x, y) {
+  const rc = boardEl.getBoundingClientRect();
+  const size = (rc.width / COLS) * 0.9;
+  const g = document.createElement("div");
+  g.className = "ghost"; g.style.width = size + "px"; g.style.fontSize = size * 0.45 + "px";
+  g.innerHTML = orbHTML(color); document.body.appendChild(g);
+  state.ghost = g; moveGhost(x, y);
+}
+function moveGhost(x, y) { if (state.ghost) { state.ghost.style.left = x + "px"; state.ghost.style.top = y + "px"; } }
+function dropGhost() { if (state.ghost) { state.ghost.remove(); state.ghost = null; } }
+
+let dragging = false, movedThisDrag = false, snapshot = null;
+boardEl.addEventListener("pointerdown", (e) => {
+  const i = cellAt(e.clientX, e.clientY);
+  if (i < 0) return;
+  boardEl.setPointerCapture(e.pointerId);
+  dragging = true;
+  if (state.mode === "edit") {
+    state.undo.push(state.board.slice());
+    state.board[i] = state.brush; state.total = 0; render(); return;
+  }
+  if (state.board[i] < 0) { dragging = false; return; }
+  state.held = i; movedThisDrag = false; snapshot = state.board.slice();
+  makeGhost(state.board[i], e.clientX, e.clientY);
+  render();
+});
+boardEl.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const i = cellAt(e.clientX, e.clientY);
+  if (state.mode === "edit") {
+    if (i >= 0 && state.board[i] !== state.brush) { state.board[i] = state.brush; render(); }
+    return;
+  }
+  moveGhost(e.clientX, e.clientY);
+  if (i < 0 || i === state.held) return;
+  const b = state.board, t = b[i];
+  b[i] = b[state.held]; b[state.held] = t;
+  state.held = i; movedThisDrag = true; render();
+});
+function endDrag() {
+  if (!dragging) return;
+  dragging = false;
+  if (state.mode === "play") {
+    dropGhost(); state.held = -1;
+    if (movedThisDrag) { state.undo.push(snapshot); state.moves++; state.total = 0; }
+  }
+  render();
+}
+boardEl.addEventListener("pointerup", endDrag);
+boardEl.addEventListener("pointercancel", endDrag);
+
+/* ---- controls ---- */
+function setMode(m) {
+  state.mode = m;
+  $("m-play").setAttribute("aria-pressed", m === "play");
+  $("m-edit").setAttribute("aria-pressed", m === "edit");
+  $("palette-box").hidden = m !== "edit";
+  $("hint").textContent = m === "play"
+    ? "ドロップを長押しして動かすと、通った場所のドロップが入れ替わります。"
+    : "下のブラシを選んで、盤面をタップまたはなぞると色を置けます。";
+  render();
+}
+$("m-play").onclick = () => setMode("play");
+$("m-edit").onclick = () => setMode("edit");
+
+function buildPalette() {
+  const pal = $("palette");
+  const items = [...NAMES.map((n, i) => ({ i, n })), { i: -1, n: "空" }];
+  pal.innerHTML = items.map((it) => `<button class="sw ${it.i < 0 ? "empty" : ""}" data-b="${it.i}" aria-pressed="${it.i === state.brush}" aria-label="${it.n}"><div class="orb c${it.i}">${it.n}</div></button>`).join("");
+  pal.querySelectorAll(".sw").forEach((b) => b.addEventListener("click", () => {
+    state.brush = parseInt(b.dataset.b, 10);
+    pal.querySelectorAll(".sw").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  }));
+}
+function setBoard(b, keepMoves) {
+  state.undo.push(state.board.slice());
+  state.board = b.slice(); state.total = 0; if (!keepMoves) state.moves = 0; render();
+}
+$("b-random").onclick = () => setBoard(randomBoard());
+$("b-reset").onclick = () => { setBoard(state.start); toast("初期盤面に戻しました"); };
+$("b-save").onclick = () => { state.start = state.board.slice(); lsSet(state.start); toast("この盤面を初期盤面にしました"); };
+$("b-empty").onclick = () => setBoard(new Array(N).fill(-1));
+$("b-undo").onclick = () => {
+  const p = state.undo.pop(); if (!p) return;
+  state.board = p; if (state.moves > 0 && state.mode === "play") state.moves--; state.total = 0; render();
+};
+$("b-clear").onclick = () => {
+  const combos = evaluate(state.board);
+  if (!combos.length) return;
+  state.undo.push(state.board.slice());
+  let wave = 0;
+  let b = state.board.slice(), cs = combos;
+  while (cs.length) {
+    wave++; state.total += cs.length;
+    cs.forEach((cb) => cb.cells.forEach((p) => { b[p] = -1; }));
+    b = gravity(b); cs = evaluate(b);
+  }
+  state.board = b; render();
+  toast(wave > 1 ? `${wave}連鎖で消えました` : "消えました");
+};
+
+/* ---- boot ---- */
+const saved = lsGet();
+state.start = Array.isArray(saved) && saved.length === N ? saved : randomBoard();
+state.board = state.start.slice();
+buildPalette();
+render();
+</script>
+
+</body></html>
